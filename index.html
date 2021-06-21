@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>筛选查询</title>
+    <script src="src/js/jquery-3.1.1.min.js"></script>
+    <script src="src/js/layer/layer.js"></script>
+
+</head>
+
+<body>
+    <div class="upload">
+        <button class="upload-button">
+            上传文件
+            <input class="upload-file" type="file" name="file" id="file" webkitdirectory>
+        </button>
+        <span></span>
+    </div>
+    <div class="form-box">
+        <form id="form" class="form">
+            <div class="form-item">
+                <span class="form-name">LevelName</span>
+                <span class="form-input">
+                    <input type="text" name="LevelName" placeholder="请输入LevelName">
+                </span>
+            </div>
+            <div class="form-item">
+                <span class="form-name">Caller</span>
+                <span class="form-input">
+                    <input type="text" name="Caller" placeholder="请输入Caller">
+                </span>
+            </div>
+            <div class="form-item">
+                <span class="form-name">NameSpace</span>
+                <span class="form-input">
+                    <input type="text" name="NameSpace" placeholder="请输入NameSpace">
+                </span>
+            </div>
+            <div class="form-item">
+                <span class="form-name">TypeName</span>
+                <span class="form-input">
+                    <input type="text" name="TypeMsg" placeholder="请输入TypeName">
+                </span>
+            </div>
+            <div class="form-item">
+                <span class="form-name">TimeString</span>
+                <span class="form-input">
+                    <input type="text" name="TimeString" placeholder="请输入TimeString">
+                </span>
+            </div>
+            <div class="form-item">
+                <span class="form-name">Message</span>
+                <span class="form-input">
+                    <input type="text" name="Message" placeholder="请输入Message">
+                </span>
+            </div>
+        </form>
+        <div>
+            <button onclick="filterSearch()">筛选</button>
+        </div>
+    </div>
+    <div class="table-box">
+        <div class="total" id="total"></div>
+        <table id="result" class="table" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th>LevelName</th>
+                    <th>Caller</th>
+                    <th>NameSpace</th>
+                    <th>TypeName</th>
+                    <th>TimeString</th>
+                    <th>Message</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+        <div class="empty" id="empty">
+            <img src="src/icon/empty.png" alt="">
+            <span>暂无数据</span>
+        </div>
+    </div>
+
+    <p style="text-align: center;"><strong>注意：</strong> Internet Explorer 9 及更早 IE 版本浏览器不支持 Web Workers.</p>
+
+    <div class="mark-box hide" id="detail">
+        <div class="mark" onclick="closeHandle()"></div>
+        <div class="mark-main">
+            <div class="mark-detail-box">
+                <div class="close" onclick="closeHandle()">
+                    <img src="src/icon/close.png" alt="">
+                </div>
+                <div class="mark-detail"></div>
+
+            </div>
+        </div>
+    </div>
+
+</body>
+<script>
+
+    var fileObj = {
+        pageSize: 50,
+        workerArr: [],
+        count: 0,
+        spliceArr: []
+    }
+
+    var filterObj = {
+        pageSize: 100000,
+        workerArr: [],
+        count: 0,
+        spliceIndex: 0,
+        filter: {},
+    }
+    var workerLength = 4;
+
+    var tableData = [];
+
+    var filterData = [];
+
+    var page = 0;
+
+    var pageSize = 1000;
+
+    var hasMore = true;
+
+    var loading = false;
+
+    var loadingIndex = null;
+
+    $(function () {
+
+        for (let i = 0; i < workerLength; i++) {
+            const worker = new Worker('src/js/file.worker.js');
+
+            worker.onmessage = getTableRes;
+
+
+            fileObj.workerArr.push(worker);
+
+            const worker2 = new Worker('src/js/filter.worker.js');
+
+            worker2.onmessage = getFilterRes;
+
+            filterObj.workerArr.push(worker2);
+
+        }
+
+        document.getElementById('file').addEventListener('change', (e) => {
+            console.time('file');
+
+            loading = true;
+
+            loadingIndex = layer.load(2, { shade: 0.15 });
+
+            tableData = [];
+
+            filterData = [];
+
+            const files = e.currentTarget.files;
+
+            console.log('files', files)
+
+            fileObj.spliceArr = Array.from(files);
+
+            fileObj.count = files.length;
+
+            for (let i = 0; i < workerLength; i++) {
+
+                const postFile = fileObj.spliceArr.splice(0, fileObj.pageSize);
+
+                if (postFile.length > 0) {
+
+                    fileObj.workerArr[i].postMessage({ data: postFile, index: i });
+                }
+
+
+            }
+
+        })
+
+
+        window.addEventListener("scroll", () => {
+            const dscrollTop = document.body.scrollTop || document.documentElement.scrollTop;
+
+            if (document.documentElement.offsetHeight <= (dscrollTop + window.innerHeight + 1)) {
+                if (!loading && hasMore) {
+                    loading = true;
+
+                    loadingIndex = layer.load(2, { shade: 0.15 });
+
+                    getMoreData();
+                }
+            }
+        })
+    })
+
+
+    function getTableRes(e) {
+        const data = e.data.data;
+
+        tableData = tableData.concat(data);
+
+        filterData = filterData.concat(data);
+
+        const index = e.data.index;
+
+        fileObj.count -= fileObj.pageSize;
+
+        if (fileObj.count <= 0) {
+            console.timeEnd('file');
+
+            const file = document.getElementById('file');
+
+            file.value = '';
+
+            page = 0;
+
+            hasMore = true;
+
+            $("#total").text(`总数：${filterData.length}`);
+
+            getMoreData();
+
+
+        } else {
+
+            const postFile = fileObj.spliceArr.splice(0, fileObj.pageSize);
+
+            if (postFile.length > 0) {
+
+                fileObj.workerArr[index].postMessage({ data: postFile, index: index });
+            }
+        }
+
+    }
+
+    function getFilterRes(e) {
+        const data = e.data.data
+        filterData = filterData.concat(data);
+        const index = e.data.index;
+
+        filterObj.count -= filterObj.pageSize;
+
+        if (filterObj.count <= 0) {
+            console.timeEnd('filter');
+
+            page = 0;
+
+            hasMore = true;
+
+            $("#total").text(`总数：${filterData.length}`);
+
+            getMoreData()
+
+        } else {
+
+            let postData = tableData.slice(filterObj.spliceIndex, filterObj.spliceIndex + filterObj.pageSize);
+
+            filterObj.spliceIndex = filterObj.spliceIndex + filterObj.pageSize;
+
+            if (postData.length > 0) {
+
+
+                filterObj.workerArr[index].postMessage({ data: postData, index: index, filter: filterObj.filter });
+
+                postData = null;
+            }
+        }
+
+
+    }
+
+    function filterSearch() {
+        console.time('filter');
+
+        loading = true;
+
+        loadingIndex = layer.load(2, { shade: 0.15 });
+
+        const form = $("#form").serializeArray();
+
+
+        const formData = {};
+
+        form.forEach((item) => {
+            if (item.value) formData[item.name] = item.value.replace(/^\s+|\s+$/gm, '');
+        })
+
+        if (Object.keys(formData).length === 0) {
+            filterData = tableData;
+
+            page = 0;
+
+            hasMore = true;
+
+            $("#total").text(`总数：${filterData.length}`);
+
+            getMoreData();
+
+            return;
+        }
+        const filter = formData;
+
+        filterObj.filter = filter;
+
+        filterObj.spliceIndex = 0;
+
+        filterObj.count = tableData.length;
+
+        filterData = [];
+
+        for (let i = 0; i < workerLength; i++) {
+
+            let postData = tableData.slice(filterObj.spliceIndex, filterObj.spliceIndex + filterObj.pageSize);
+
+            filterObj.spliceIndex = filterObj.spliceIndex + filterObj.pageSize;
+
+            if (postData.length > 0) {
+
+                filterObj.workerArr[i].postMessage({ data: postData, index: i, filter: filterObj.filter });
+                postData = null;
+            }
+
+
+        }
+
+
+    }
+
+    function getMoreData() {
+        if (!hasMore) return;
+
+        const nextPage = page + 1;
+
+        let data = [];
+
+        if (nextPage * pageSize >= filterData.length) {
+            hasMore = false;
+            data = filterData.slice((nextPage - 1) * pageSize);
+
+        } else {
+            data = filterData.slice((nextPage - 1) * pageSize, nextPage * pageSize);
+        }
+
+        page = nextPage;
+
+        let html = '';
+
+        data.forEach((item, index) => {
+            html += `<tr>
+                <td>${index + 1 + (page - 1) * pageSize}</td>
+                <td>${item.LevelName}</td>
+                <td>${item.Caller}</td>
+                <td>${item.NameSpace}</td>
+                <td>${item.TypeName}</td>
+                <td>${item.TimeString}</td>
+                <td><span class="message">${item.Message}</span></td>
+                <td><button class="detail-btn" onclick="detailHandle(${index + (page - 1) * pageSize})">详情</button></td></tr>`;
+        })
+        if (page === 1) $("table").find('tbody').empty();
+
+        $("table").find('tbody').append(html);
+
+        loading = false;
+
+        layer.close(loadingIndex)
+
+        if (filterData.length === 0) {
+            $("#empty").show();
+        } else {
+            $("#empty").hide();
+
+        }
+
+        console.log('hasMore2222222>>>>>>>', hasMore)
+
+
+    }
+
+    function detailHandle(index) {
+        const item = filterData[index];
+
+        console.log('item>>>>>>>>>>', item);
+
+        let html = `<div class="detail">
+                    <div class="item"><span>LevelName:</span>${item.LevelName}</div>
+                    <div class="item"><span>Caller:</span>${item.Caller}</div>
+                    <div class="item"><span>NameSpace:</span>${item.NameSpace}</div>
+                    <div class="item"><span>TypeName:</span>${item.TypeMsg}</div>
+                    <div class="item"><span>TimeString:</span>${item.TimeString}</div>
+                    <div class="item"><span>Message:</span>${item.Message}</div>
+                    </div>`;
+
+        document.documentElement.style.overflowY = 'hidden';
+
+        layer.open({
+            type: 1,
+            skin: 'detail-box',
+            title: '详情',
+            content: html,
+            cancel: (index, layero) => {
+                document.documentElement.style.overflowY = 'scroll';
+            }
+        });
+    }
+</script>
+<style>
+    .upload {
+        margin: 20px 0;
+        text-align: center;
+
+    }
+
+    .upload .upload-button {
+        position: relative;
+    }
+
+    .upload .upload-button .upload-file {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0;
+    }
+
+    .form-box {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .form {
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .form .form-item {
+        margin: 10px 0;
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+    }
+
+    .form .form-item .form-name {
+        width: 120px;
+        font-size: 14px;
+        color: #606266;
+        font-weight: bold;
+    }
+
+    .form .form-item .form-input>input {
+        width: 400px;
+        background-color: #fff;
+        background-image: none;
+        border-radius: 4px;
+        border: 1px solid #dcdfe6;
+        height: 28px;
+        line-height: 28px;
+        padding: 0 10px;
+        box-sizing: border-box;
+    }
+
+    .table-box {
+        width: 95%;
+        margin: 20px auto;
+    }
+
+    .total {
+        padding: 20px 0;
+        font-size: 14px;
+    }
+
+    .table {
+        width: 100%;
+        max-height: 800px;
+        border: 1px solid #dcdfe6;
+        text-align: center;
+        border-collapse: collapse;
+    }
+
+    .table tr {
+        border-bottom: 1px solid #dcdfe6;
+    }
+
+    .table tr:nth-of-type(2n) {
+        background: #e1ebf8;
+    }
+
+    .table th {
+        font-size: 14px;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+
+    .table td {
+        font-size: 12px;
+        padding: 5px 10px;
+        box-sizing: border-box;
+    }
+
+    .message {
+        display: inline-block;
+        width: 500px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 4;
+    }
+
+    .empty {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        font-size: 14px;
+        color: #bebebe;
+        border: 1px solid #dcdfe6;
+        padding: 20px 0;
+    }
+
+    .empty img {
+        width: 200px;
+        margin: 10px 0;
+    }
+
+    input::-webkit-input-placeholder {
+        color: #aab2bd;
+        font-size: 12px;
+        text-align: left;
+
+    }
+
+    button {
+
+        display: inline-block;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        color: #fff;
+        background-color: #1890ff;
+        border-color: #1890ff;
+        -webkit-appearance: none;
+        text-align: center;
+        -webkit-box-sizing: border-box;
+        box-sizing: border-box;
+        outline: none;
+        margin: 0;
+        -webkit-transition: .1s;
+        transition: .1s;
+        font-weight: 400;
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        padding: 5px 10px;
+        font-size: 14px;
+        border-radius: 4px;
+    }
+
+    .detail-btn {
+        background-color: #78d19a;
+        border-color: #78d19a;
+        padding: 5px;
+        font-size: 12px;
+
+    }
+
+    .detail {
+        font-size: 14px;
+        line-height: 30px;
+        padding: 30px;
+        max-width: 70vw;
+        max-height: 70vh;
+        overflow-y: scroll;
+    }
+
+    .detail .item>span {
+        font-size: 14px;
+        color: #000;
+        font-weight: bold;
+        margin-right: 10px;
+    }
+
+    .hide {
+        display: none;
+    }
+
+
+    .detail-box ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+        margin-left: 10px;
+    }
+
+    .detail-box ::-webkit-scrollbar-thumb {
+        background: linear-gradient(13deg, #0096E0 14%, #005BAC 64%);
+        border-radius: 10px;
+    }
+
+    .detail-box ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(13deg, #c7ceff 14%, #f9d4ff 64%);
+    }
+
+    .detail-box ::-webkit-scrollbar-track {
+        background: #ffffff;
+        border-radius: 10px;
+    }
+</style>
+
+</html>
